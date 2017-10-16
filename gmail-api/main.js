@@ -1,3 +1,6 @@
+var inbox = require("inbox");
+var useOAuth = false
+
 var fs = require('fs');
 var readline = require('readline');
 var google = require('googleapis');
@@ -18,7 +21,7 @@ fs.readFile('client_secret.json', function processClientSecrets(err, content) {
     }
     // Authorize a client with the loaded credentials, then call the
     // Gmail API.
-    authorize(JSON.parse(content), listLabels);
+    authorize(JSON.parse(content), main);
 });
 
 /**
@@ -41,7 +44,7 @@ function authorize(credentials, callback) {
             console.log("get token first time:", err)
             getNewToken(oauth2Client, callback);
         } else {
-            //console.log("found last token:", JSON.parse(token))
+            console.log("found saved token:")
             oauth2Client.credentials = JSON.parse(token);
             callback(oauth2Client);
         }
@@ -98,30 +101,46 @@ function storeToken(token) {
     console.log('Token stored to ' + TOKEN_PATH);
 }
 
-/**
- * Lists the labels in the user's account.
- *
- * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
- */
-function listLabels(auth) {
-    var gmail = google.gmail('v1');
-    gmail.users.labels.list({
-        auth: auth,
-        userId: 'me',
-    }, function(err, response) {
-        if (err) {
-            console.log('The API returned an error: ' + err);
-            return;
-        }
-        var labels = response.labels;
-        if (labels.length == 0) {
-            console.log('No labels found.');
-        } else {
-            console.log('Labels:');
-            for (var i = 0; i < labels.length; i++) {
-                var label = labels[i];
-                console.log('- %s', label.name);
+function main(auth){
+    if (!useOAuth) {
+        console.log("connect gmail with basic authentication")
+        var client = inbox.createConnection(false, "imap.gmail.com", {
+            secureConnection: true,
+            auth:{
+                user: "jimmy@hyper.sh",
+                pass: process.env.GMAIL_PASSWORD
             }
-        }
+        });
+    } else {
+        console.log("connect gmail with oauth2 authentication")
+        console.log("client_id:", auth._clientId, " client_secret:", auth._clientSecret)
+        console.log("refresh_token:",auth.credentials.refresh_token, " access_token:", auth.credentials.access_token)
+        var client = inbox.createConnection(false, "imap.gmail.com", {
+            secureConnection: true,
+            debug: true,
+            auth:{
+                XOAuth2:{
+                    user: "jimmy@hyper.sh",
+                    clientId: auth._clientId,
+                    clientSecret: auth._clientSecret,
+                    refreshToken: auth.credentials.refresh_token,
+                    accessToken: auth.credentials.access_token,
+                    timeout: 3600
+                }
+            }
+        });
+    }
+
+    //register event
+    client.on("connect", function(){
+        console.log("Successfully connected to server");
+        this.close();
     });
+    client.on('close', function (){
+        console.log('DISCONNECTED!');
+    });
+
+    //start
+    client.connect();
+
 }
